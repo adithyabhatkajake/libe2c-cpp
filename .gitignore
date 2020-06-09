@@ -1,0 +1,14 @@
+CMakeCache.txt
+CMakeDoxyfile.in
+CMakeDoxygenDefaults.cmake
+CMakeFiles/cmake.check_cache
+CMakeFiles/CMakeError.log
+CMakeFiles/CMakeOutput.log
+CMakeFiles/3.17.3/CMakeCCompiler.cmake
+CMakeFiles/3.17.3/CMakeDetermineCompilerABI_C.bin
+CMakeFiles/3.17.3/CMakeCXXCompiler.cmake
+build/
+CMakeFiles/
+.vscode/
+include/libe2c/config.h
+libsecp256k1-prefix/
