@@ -40,10 +40,3 @@ sections below may be incomplete and subject to changes as we make more progress
 
     # Fault tolerance:
     # Script to demo Fault tolerance
-
-TODO
-====
-
-- Update Full Paper Link
-- Add Scripts
-- Finish Porting

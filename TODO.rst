@@ -1,1 +1,3 @@
-- Port Project to CPP
+TODO Add Logging
+TODO Add E2C Implementation
+TODO Add Timers

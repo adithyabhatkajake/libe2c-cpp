@@ -1,8 +1,4 @@
 #pragma once
 
-#cmakedefine E2C_TRACE
 #cmakedefine E2C_DEBUG
-#cmakedefine E2C_INFO
-#cmakedefine E2C_WARN
-#cmakedefine E2C_ERROR
 #cmakedefine E2C_ENABLE_PROT_LOG

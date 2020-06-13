@@ -7,16 +7,17 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/salticidae/cmake
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
+include(ExternalProject)
 # Configure CMake for salticidae
 add_subdirectory(salticidae)
 include_directories(salticidae/include)
 
-# Configure CMake for secp256k1
+# Build salticidae
 
-include(ExternalProject)
+# Build secp256k1
 include_directories(secp256k1/include)
 ExternalProject_Add(libsecp256k1
-    SOURCE_DIR secp256k1
+    SOURCE_DIR "${CMAKE_SOURCE_DIR}/secp256k1"
     CONFIGURE_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/autogen.sh
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/configure --disable-shared --with-pic --with-bignum=no --enable-module-recovery
     BUILD_COMMAND make
@@ -36,8 +37,15 @@ include_directories(./)
 include_directories(include)
 add_library(libe2c
     OBJECT
-    # Update src files here
+    src/util.cpp
+    src/client.cpp
+    src/crypto.cpp
+    src/entity.cpp
+    src/consensus.cpp
+    src/e2c.cpp
     )
+
+# E2C Build Options
 
 option(BUILD_SHARED "build shared library." OFF)
 if(BUILD_SHARED)
@@ -51,19 +59,15 @@ set_target_properties(libe2c_static PROPERTIES OUTPUT_NAME "libe2c")
 target_link_libraries(libe2c_static salticidae_static secp256k1 crypto ${CMAKE_THREAD_LIBS_INIT})
 
 # # Building tests
+add_subdirectory(test)
 
-# add_subdirectory(test)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release")
+endif()
 
-# if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-#     set(CMAKE_BUILD_TYPE "Release")
-# endif()
-
-option(E2C_TRACE            "Enable TRACE log"          ON )
-option(E2C_DEBUG            "Enable DEBUG log"          OFF)
-option(E2C_INFO             "Enable INFO log"           OFF)
-option(E2C_WARN             "Enable WARN log"           OFF)
-option(E2C_ERROR            "Enable ERROR log"          OFF)
-option(E2C_ENABLE_PROT_LOG  "Enable Protocol logging"   ON )
+# TODO Fix Logging
+option(E2C_ENABLE_PROT_LOG  "Enable Protocol logging"   OFF )
+option(E2C_DEBUG            "Enable Debugging"          OFF )
 
 configure_file(src/config.h.in include/libe2c/config.h @ONLY)
 
@@ -72,7 +76,7 @@ configure_file(src/config.h.in include/libe2c/config.h @ONLY)
 find_package(Doxygen)
 if (DOXYGEN_FOUND)
     add_custom_target(doc
-        ${DOXYGEN_EXECUTABLE} doc/doxygen.conf WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        ${DOXYGEN_EXECUTABLE} "${CMAKE_SOURCE_DIR}/doc/doxygen.conf" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif(DOXYGEN_FOUND)
 
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -W -Wall -Wextra -pedantic -Wsuggest-override")
