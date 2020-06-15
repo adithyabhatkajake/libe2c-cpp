@@ -238,24 +238,24 @@ bool E2CBase::conn_handler(const salticidae::ConnPool::conn_t &conn, bool connec
 }
 
 void E2CBase::print_stat() const {
-    SALTICIDAE_LOG_INFO("===== begin stats =====");
-    SALTICIDAE_LOG_INFO("-------- queues -------");
-    SALTICIDAE_LOG_INFO("blk_fetch_waiting: %lu", blk_fetch_waiting.size());
-    SALTICIDAE_LOG_INFO("blk_delivery_waiting: %lu", blk_delivery_waiting.size());
-    SALTICIDAE_LOG_INFO("decision_waiting: %lu", decision_waiting.size());
-    SALTICIDAE_LOG_INFO("-------- misc ---------");
-    SALTICIDAE_LOG_INFO("fetched: %lu", fetched);
-    SALTICIDAE_LOG_INFO("delivered: %lu", delivered);
-    SALTICIDAE_LOG_INFO("cmd_cache: %lu", storage->get_cmd_cache_size());
-    SALTICIDAE_LOG_INFO("blk_cache: %lu", storage->get_blk_cache_size());
-    SALTICIDAE_LOG_INFO("------ misc (10s) -----");
-    SALTICIDAE_LOG_INFO("fetched: %lu", part_fetched);
-    SALTICIDAE_LOG_INFO("delivered: %lu", part_delivered);
-    SALTICIDAE_LOG_INFO("decided: %lu", part_decided);
-    SALTICIDAE_LOG_INFO("gened: %lu", part_gened);
-    SALTICIDAE_LOG_INFO("avg. parent_size: %.3f",
+    logger.info("===== begin stats =====");
+    logger.info("-------- queues -------");
+    logger.info("blk_fetch_waiting: %lu", blk_fetch_waiting.size());
+    logger.info("blk_delivery_waiting: %lu", blk_delivery_waiting.size());
+    logger.info("decision_waiting: %lu", decision_waiting.size());
+    logger.info("-------- misc ---------");
+    logger.info("fetched: %lu", fetched);
+    logger.info("delivered: %lu", delivered);
+    logger.info("cmd_cache: %lu", storage->get_cmd_cache_size());
+    logger.info("blk_cache: %lu", storage->get_blk_cache_size());
+    logger.info("------ misc (10s) -----");
+    logger.info("fetched: %lu", part_fetched);
+    logger.info("delivered: %lu", part_delivered);
+    logger.info("decided: %lu", part_decided);
+    logger.info("gened: %lu", part_gened);
+    logger.info("avg. parent_size: %.3f",
             part_delivered ? part_parent_size / double(part_delivered) : 0);
-    SALTICIDAE_LOG_INFO("delivery time: %.3f avg, %.3f min, %.3f max",
+    logger.info("delivery time: %.3f avg, %.3f min, %.3f max",
             part_delivered ? part_delivery_time / double(part_delivered) : 0,
             part_delivery_time_min == double_inf ? 0 : part_delivery_time_min,
             part_delivery_time_max);
@@ -268,7 +268,7 @@ void E2CBase::print_stat() const {
     part_delivery_time = 0;
     part_delivery_time_min = double_inf;
     part_delivery_time_max = 0;
-    SALTICIDAE_LOG_INFO("--- replica msg. (10s) ---");
+    logger.info("--- replica msg. (10s) ---");
     size_t _nsent = 0;
     size_t _nrecv = 0;
     for (const auto &replica: peers)
@@ -280,7 +280,7 @@ void E2CBase::print_stat() const {
         size_t nsb = conn->get_nsentb();
         size_t nrb = conn->get_nrecvb();
         conn->clear_msgstat();
-        SALTICIDAE_LOG_INFO("%s: %u(%u), %u(%u), %u",
+        logger.info("%s: %u(%u), %u(%u), %u",
             get_hex10(replica).c_str(), ns, nsb, nr, nrb, part_fetched_replica[replica]);
         _nsent += ns;
         _nrecv += nr;
@@ -288,12 +288,12 @@ void E2CBase::print_stat() const {
     }
     nsent += _nsent;
     nrecv += _nrecv;
-    SALTICIDAE_LOG_INFO("sent: %lu", _nsent);
-    SALTICIDAE_LOG_INFO("recv: %lu", _nrecv);
-    SALTICIDAE_LOG_INFO("--- replica msg. total ---");
-    SALTICIDAE_LOG_INFO("sent: %lu", nsent);
-    SALTICIDAE_LOG_INFO("recv: %lu", nrecv);
-    SALTICIDAE_LOG_INFO("====== end stats ======");
+    logger.info("sent: %lu", _nsent);
+    logger.info("recv: %lu", _nrecv);
+    logger.info("--- replica msg. total ---");
+    logger.info("sent: %lu", nsent);
+    logger.info("recv: %lu", nrecv);
+    logger.info("====== end stats ======");
 }
 
 E2CBase::E2CBase(uint32_t blk_size,

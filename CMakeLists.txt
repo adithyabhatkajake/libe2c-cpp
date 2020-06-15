@@ -68,8 +68,23 @@ endif()
 # TODO Fix Logging
 option(E2C_ENABLE_PROT_LOG  "Enable Protocol logging"   OFF )
 option(E2C_DEBUG            "Enable Debugging"          OFF )
+option(BUILD_PROGRAMS       "Build Programs"            ON)
 
 configure_file(src/config.h.in include/libe2c/config.h @ONLY)
+
+# Build Programs (Application and Client)
+if(BUILD_PROGRAMS)
+    add_subdirectory(programs)
+endif()
+
+# Build Tools
+add_executable(keygen
+    src/keygen.cpp)
+target_link_libraries(keygen libe2c_static)
+
+add_executable(tls-keygen
+    src/tls_keygen.cpp)
+target_link_libraries(tls-keygen libe2c_static)
 
 # Setup Documentation
 

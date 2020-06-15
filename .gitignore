@@ -12,3 +12,9 @@ CMakeFiles/
 .vscode/
 include/libe2c/config.h
 libsecp256k1-prefix/
+e2c-setup*
+keygen
+tls-keygen
+nodes.txt
+log*
+

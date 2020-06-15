@@ -4,7 +4,7 @@
 ** [[https://github.com/hot-stuff/libhotstuff][HotStuff GitHub]]
 
 
-* Files to fix
+* Files to Port
 ** DONE [10/10] include/libe2c
 *** [X] consensus.h
 *** [X] client.h
@@ -17,15 +17,13 @@
 *** [X] util.h
 *** [X] type.h
 
-** WAIT [0/3] examples
-*** [ ] CmakeLists.txt
-*** [ ] e2c_app
-*** [ ] e2c_client
+** DONE [3/3] examples
+*** [X] CmakeLists.txt
+*** [X] e2c_app
+*** [X] e2c_client
 
-** WAIT [2/4] tests
+** DONE [2/4] tests
 *** [X] secp256k1_test
-*** WAIT steady_state_correct_leader_test
-*** WAIT byzantine_leader_test
 *** [X] CmakeLists
 
 ** DONE [9/9] source
@@ -40,7 +38,7 @@ Compiles Correctly
 *** [X] hotstuff_tls_keygen.cpp
 *** [X] util.cpp
 
-** WAIT [0/4] scripts
+** TODO [0/4] scripts
 *** [ ] faulty_leader_demo.sh
 A script to automate the demo of fault tolerance in E2C
 *** [ ] gen_conf.py
@@ -51,11 +49,13 @@ A script to automate the steady state with correct leader runs.
 A script that runs the clients to the automated replication service.
 
 
-* TODO [1/5] Work left to do
+* TODO [1/7] Work left to do
 ** DONE [ ] Check if everything compiles
 Make sure to add all the sources in Cmakelists and ensure that there are no compilation errors at least.
-** TODO [/] Test if the protocol works
+** TODO [0/3] Test if the protocol works
 Run it and see if the code crashes or not. In the beginning it should just print the stats or something.
-*** WAIT [ ] Enable Code Logging to ensure that the protocol works.
+*** TODO [ ] Enable Code Logging to ensure that the protocol works.
+*** TODO [ ] steady_state_correct_leader_test
+*** TODO [ ] byzantine_leader_test
 ** TODO [ ] Implement E2C Best Case
 ** TODO [ ] Implement E2C View Change
