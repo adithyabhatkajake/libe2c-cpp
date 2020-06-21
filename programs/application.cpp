@@ -64,8 +64,7 @@ using E2C = e2c::E2CSecp256k1;
 
 class E2CApp: public E2C {
     double stat_period;
-    double impeach_timeout;
-    EventContext ec;
+    double start_time ;
     EventContext req_ec;
     EventContext resp_ec;
     /** Network messaging between a replica and its client. */
@@ -99,7 +98,7 @@ class E2CApp: public E2C {
 
     void reset_imp_timer() {
         impeach_timer.del();
-        impeach_timer.add(impeach_timeout);
+        impeach_timer.add(2*get_delta());
     }
 
     void state_machine_execute(const Finality &fin) override {
@@ -112,7 +111,6 @@ class E2CApp: public E2C {
     public:
     E2CApp(uint32_t blk_size,
                 double stat_period,
-                double impeach_timeout,
                 ReplicaID idx,
                 const bytearray_t &raw_privkey,
                 NetAddr plisten_addr,
@@ -137,7 +135,6 @@ std::pair<std::string, std::string> split_ip_port_cport(const std::string &s) {
 salticidae::BoxObj<E2CApp> papp = nullptr;
 
 int main(int argc, char **argv) {
-    // TODO Create e2c-setup.conf
     Config config("e2c-setup.conf");
 
     ElapsedTime elapsed;
@@ -145,7 +142,7 @@ int main(int argc, char **argv) {
 
     auto opt_blk_size = Config::OptValInt::create(1);
     auto opt_parent_limit = Config::OptValInt::create(-1);
-    auto opt_stat_period = Config::OptValDouble::create(10);
+    auto opt_stat_period = Config::OptValDouble::create(200);
     auto opt_replicas = Config::OptValStrVec::create();
     auto opt_idx = Config::OptValInt::create(0);
     auto opt_client_port = Config::OptValInt::create(-1);
@@ -157,7 +154,7 @@ int main(int argc, char **argv) {
     auto opt_fixed_proposer = Config::OptValInt::create(1);
     auto opt_base_timeout = Config::OptValDouble::create(1);
     auto opt_prop_delay = Config::OptValDouble::create(1);
-    auto opt_imp_timeout = Config::OptValDouble::create(11);
+    auto opt_imp_timeout = Config::OptValDouble::create(60);
     auto opt_nworker = Config::OptValInt::create(1);
     auto opt_repnworker = Config::OptValInt::create(1);
     auto opt_repburst = Config::OptValInt::create(100);
@@ -227,10 +224,7 @@ int main(int argc, char **argv) {
 
     auto parent_limit = opt_parent_limit->get();
     e2c::pacemaker_bt pmaker;
-    if (opt_pace_maker->get() == "dummy")
-        pmaker = new e2c::PaceMakerDummyFixed(opt_fixed_proposer->get(), parent_limit);
-    else
-        pmaker = new e2c::PaceMakerRR(ec, parent_limit, opt_base_timeout->get(), opt_prop_delay->get());
+    pmaker = new e2c::E2CSyncPaceMaker(opt_fixed_proposer->get());
 
     E2CApp::Net::Config repnet_config;
     ClientNetwork<opcode_t>::Config clinet_config;
@@ -257,7 +251,6 @@ int main(int argc, char **argv) {
         .nworker(opt_clinworker->get());
     papp = new E2CApp(opt_blk_size->get(),
                         opt_stat_period->get(),
-                        opt_imp_timeout->get(),
                         idx,
                         e2c::from_hex(opt_privkey->get()),
                         plisten_addr,
@@ -277,11 +270,12 @@ int main(int argc, char **argv) {
             e2c::from_hex(std::get<2>(r))));
     }
     auto shutdown = [&](int) { papp->stop(); };
-    salticidae::SigEvent ev_sigint(ec, shutdown);
-    salticidae::SigEvent ev_sigterm(ec, shutdown);
+    salticidae::SigEvent ev_sigint(papp->ec, shutdown);
+    salticidae::SigEvent ev_sigterm(papp->ec, shutdown);
     ev_sigint.add(SIGINT);
     ev_sigterm.add(SIGTERM);
 
+    papp->set_delta(opt_imp_timeout->get()) ; // 2 minutes
     papp->start(reps);
     elapsed.stop(true);
     return 0;
@@ -289,7 +283,6 @@ int main(int argc, char **argv) {
 
 E2CApp::E2CApp(uint32_t blk_size,
                         double stat_period,
-                        double impeach_timeout,
                         ReplicaID idx,
                         const bytearray_t &raw_privkey,
                         NetAddr plisten_addr,
@@ -302,8 +295,6 @@ E2CApp::E2CApp(uint32_t blk_size,
     E2C(blk_size, idx, raw_privkey,
             plisten_addr, std::move(pmaker), ec, nworker, repnet_config),
     stat_period(stat_period),
-    impeach_timeout(impeach_timeout),
-    ec(ec),
     cn(req_ec, clinet_config),
     clisten_addr(clisten_addr) {
     /* prepare the thread used for sending back confirmations */
@@ -316,8 +307,7 @@ E2CApp::E2CApp(uint32_t blk_size,
             try {
                 cn.send_msg(MsgRespCmd(std::move(p.first)), p.second);
             } catch (std::exception &err) {
-                // TODO Logging
-                //  HOTSTUFF_LOG_WARN("unable to send to the client: %s", err.what());
+                e2c::logger.warning("unable to send to the client: %s", err.what());
             }
         }
         return false;
@@ -333,7 +323,6 @@ void E2CApp::client_request_cmd_handler(MsgReqCmd &&msg, const conn_t &conn) {
     const NetAddr addr = conn->get_addr();
     auto cmd = parse_cmd(msg.serialized);
     const auto &cmd_hash = cmd->get_hash();
-    // TODO Logging
     e2c::logger.info ("processing %s", std::string(*cmd).c_str());
     exec_command(cmd_hash, [this, addr](Finality fin) {
         resp_queue.enqueue(std::make_pair(fin, addr));
@@ -342,18 +331,16 @@ void E2CApp::client_request_cmd_handler(MsgReqCmd &&msg, const conn_t &conn) {
 
 void E2CApp::start(const std::vector<std::tuple<NetAddr, bytearray_t, bytearray_t>> &reps) {
     ev_stat_timer = TimerEvent(ec, [this](TimerEvent &) {
-        E2C::print_stat();
         E2CApp::print_stat();
         //HotStuffCore::prune(100);
         ev_stat_timer.add(stat_period);
     });
     ev_stat_timer.add(stat_period);
     impeach_timer = TimerEvent(ec, [this](TimerEvent &) {
-        if (get_decision_waiting().size())
-            get_pace_maker()->impeach();
+        // If 2\delta has passed and no progress has been made, then impeach the leader
+        get_pace_maker()->impeach();
         reset_imp_timer();
     });
-    impeach_timer.add(impeach_timeout);
     e2c::logger.info("** starting the system with parameters **");
     e2c::logger.info("blk_size = %lu", blk_size);
     e2c::logger.info("conns = %lu", E2C::size());
@@ -370,7 +357,7 @@ void E2CApp::start(const std::vector<std::tuple<NetAddr, bytearray_t, bytearray_
     req_thread = std::thread([this]() { req_ec.dispatch(); });
     resp_thread = std::thread([this]() { resp_ec.dispatch(); });
     /* enter the event main loop */
-    ec.dispatch();
+    papp->ec.dispatch();
 }
 
 void E2CApp::stop() {
@@ -381,6 +368,7 @@ void E2CApp::stop() {
         resp_ec.stop();
     });
 
+    impeach_timer.del();
     req_thread.join();
     resp_thread.join();
     ec.stop();

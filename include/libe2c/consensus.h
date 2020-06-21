@@ -12,57 +12,67 @@
 namespace e2c {
 
 struct Proposal;
-struct Vote;
+// struct Blame ;     // TODO
+// struct QuitView ;  // TODO
+// struct ReqVote ;   // TODO
+// struct Vote ;      // TODO
 struct Finality;
 
 /** Abstraction for E2C protocol state machine (without network implementation). */
 class E2CCore {
     block_t b0;                                  /** the genesis block */
+    double delta;
     /* === state variables === */
     /** block containing the QC for the highest block having one */
-    std::pair<block_t, quorum_cert_bt> hqc;   /**< highest QC */
-    block_t b_lock;                            /**< locked block */
-    block_t b_exec;                            /**< last executed block */
-    uint32_t vheight;          /**< height of the block last voted for */
+    block_t b_mark;                            /**< locked block */
+    block_t b_comm;                            /**< last executed block */
+    // On finishing 2\delta, use this to commit this block and all its ancestors
+    inline void commit_timer_cb (uint32_t ht);
     /* === auxilliary variables === */
     privkey_bt priv_key;            /**< private key for signing votes */
     std::set<block_t> tails;   /**< set of tail blocks */
     ReplicaConfig config;                   /**< replica configuration */
     /* === async event queues === */
-    std::unordered_map<block_t, promise_t> qc_waiting;
     promise_t propose_waiting;
     promise_t receive_proposal_waiting;
-    promise_t hqc_update_waiting;
     /* == feature switches == */
-    /** always vote negatively, useful for some PaceMakers */
-    bool vote_disabled;
 
     block_t get_delivered_blk(const uint256_t &blk_hash);
     void sanity_check_delivered(const block_t &blk);
     void update(const block_t &nblk);
-    void update_hqc(const block_t &_hqc, const quorum_cert_bt &qc);
-    void on_hqc_update();
-    void on_qc_finish(const block_t &blk);
     void on_propose_(const Proposal &prop);
     void on_receive_proposal_(const Proposal &prop);
+    // void on_blame_(const Blame &bl );
+    // void on_receive_blame(const Blame &bl);
+    // void on_quit_view_(const QuitView &qv);
+    // void on_receive_quit_view(const QuitView &qv);
+    // void on_request_vote_(const ReqVote &rv);
+    // void on_receive_request_vote(const ReqVote &rv);
+    // void on_vote_(const Vote &vote);
+    // void on_receive_vote(const Vote &vote);
 
     protected:
     ReplicaID id;                  /**< identity of the replica itself */
 
     public:
+    EventContext ec;
+    //  Set Commit timer and handler for every block
+    std::unordered_map<uint32_t, TimerEvent> commit_queue;
+    // Map between height and block
+    std::unordered_map<uint32_t, block_t> ht_blk_map;
     BoxObj<EntityStorage> storage;
 
     E2CCore(ReplicaID id, privkey_bt &&priv_key);
-    virtual ~E2CCore() {
-        b0->qc_ref = nullptr;
-    }
+    virtual ~E2CCore() {}
 
     /* Inputs of the state machine triggered by external events, should called
      * by the class user, with proper invariants. */
 
     /** Call to initialize the protocol, should be called once before all other
-     * functions. */
+     * functions. Also initialize EventContext */
     void on_init(uint32_t nfaulty);
+    void set_delta(double _d) { delta = _d; }
+    double get_delta() { return delta; }
 
     /** Call to inform the state machine that a block is ready to be handled.
      * A block is only delivered if itself is fetched, the block for the
@@ -75,10 +85,6 @@ class E2CCore {
     /** Call upon the delivery of a proposal message.
      * The block mentioned in the message should be already delivered. */
     void on_receive_proposal(const Proposal &prop);
-
-    /** Call upon the delivery of a vote message.
-     * The block mentioned in the message should be already delivered. */
-    void on_receive_vote(const Vote &vote);
 
     /** Call to submit new commands to be decided (executed). "Parents" must
      * contain at least one block, and the first block is the actual parent,
@@ -101,10 +107,10 @@ class E2CCore {
      * The user should send the proposal message to all replicas except for
      * itself. */
     virtual void do_broadcast_proposal(const Proposal &prop) = 0;
-    /** Called upon sending out a new vote to the next proposer.  The user
-     * should send the vote message to a *good* proposer to have good liveness,
-     * while safety is always guaranteed by E2CCore. */
-    virtual void do_vote(ReplicaID last_proposer, const Vote &vote) = 0;
+    // virtual void do_blame(const Blame &bl) = 0 ;
+    // virtual void do_quit_view(const QuitView &qv) = 0;
+    // virtual void do_req_vote(const ReqVote &rv) = 0;
+    // virtual void do_vote(const Vote &vote) = 0;
 
     /* The user plugs in the detailed instances for those
      * polymorphic data types. */
@@ -129,23 +135,35 @@ class E2CCore {
 
     /* PaceMaker can use these functions to monitor the core protocol state
      * transition */
-    /** Get a promise resolved when the block gets a QC. */
-    promise_t async_qc_finish(const block_t &blk);
     /** Get a promise resolved when a new block is proposed. */
     promise_t async_wait_proposal();
     /** Get a promise resolved when a new proposal is received. */
     promise_t async_wait_receive_proposal();
-    /** Get a promise resolved when hqc is updated. */
-    promise_t async_hqc_update();
+    /** Get a promise resolved when a new blame is detected. */
+    // promise_t async_wait_blame();
+    /** Get a promise resolved when a new blame is received. */
+    // promise_t async_wait_receive_blame();
+    /** Get a promise resolved when we quit the view */
+    // promise_t async_wait_quit_view();
+    /** Get a promise resolved when we receive a quit view message. */
+    // promise_t async_wait_receive_quit_view();
+    /** Get a promise resolved when we request a vote */
+    // promise_t async_wait_request_vote();
+    /** Get a promise resolved when we receive a request for a vote. */
+    // promise_t async_wait_receive_request_vote();
+    /** Get a promise resolved when we vote */
+    // promise_t async_wait_vote();
+    /** Get a promise resolved when we receive a vote. */
+    // promise_t async_wait_receive_vote();
+    /** Get a promise resolved when we perform a consensus */
+    promise_t async_wait_perform_consensus();
 
     /* Other useful functions */
     const block_t &get_genesis() const { return b0; }
-    const block_t &get_hqc() { return hqc.first; }
     const ReplicaConfig &get_config() const { return config; }
     ReplicaID get_id() const { return id; }
     const std::set<block_t> get_tails() const { return tails; }
     operator std::string () const;
-    void set_vote_disabled(bool f) { vote_disabled = f; }
 };
 
 /** Abstraction for proposal messages. */
@@ -166,7 +184,8 @@ struct Proposal: public Serializable {
 
     void serialize(DataStream &s) const override {
         s << proposer
-          << *blk;
+          << *blk
+            << *(blk->get_signature()) ;
     }
 
     void unserialize(DataStream &s) override {
@@ -174,6 +193,7 @@ struct Proposal: public Serializable {
         s >> proposer;
         Block _blk;
         _blk.unserialize(s, hsc);
+        _blk.set_signature(hsc->parse_part_cert(s));
         blk = hsc->storage->add_blk(std::move(_blk), hsc->get_config());
     }
 
@@ -186,65 +206,85 @@ struct Proposal: public Serializable {
     }
 };
 
-/** Abstraction for vote messages. */
-struct Vote: public Serializable {
-    ReplicaID voter;
-    /** block being voted */
-    uint256_t blk_hash;
-    /** proof of validity for the vote */
-    part_cert_bt cert;
+// // BLAME type in {Equivocation, Extension, No-PROGRESS}
+// struct EquivBlame: public Serializable {
+//     /** Height at which we have a blame */
+//     block_t blk1, blk2 ;
+//     /** handle of the core object to allow polymorphism. The user should use
+//      * a pointer to the object of the class derived from E2CCore */
+//     E2CCore *hsc;
 
-    /** handle of the core object to allow polymorphism */
-    E2CCore *hsc;
+//     EquivBlame(): blk1(nullptr), blk2(nullptr), hsc(nullptr) {}
+//     EquivBlame(const block_t &blk1,
+//                const block_t &blk2,
+//             E2CCore *hsc):
+//         blk1(blk1), blk2(blk2), hsc(hsc) {}
 
-    Vote(): cert(nullptr), hsc(nullptr) {}
-    Vote(ReplicaID voter,
-        const uint256_t &blk_hash,
-        part_cert_bt &&cert,
-        E2CCore *hsc):
-        voter(voter),
-        blk_hash(blk_hash),
-        cert(std::move(cert)), hsc(hsc) {}
+//     void serialize(DataStream &s) const override {
+//         s << *blk1
+//              << *blk2 ;
+//     }
 
-    Vote(const Vote &other):
-        voter(other.voter),
-        blk_hash(other.blk_hash),
-        cert(other.cert ? other.cert->clone() : nullptr),
-        hsc(other.hsc) {}
+//     void unserialize(DataStream &s) override {
+//         assert(hsc != nullptr);
+//         s >> proposer;
+//         Block _blk1, _blk2;
+//         _blk1.unserialize(s, hsc);
+//         _blk2.unserialize(s, hsc);
+//         blk1 = hsc->storage->add_blk(std::move(_blk1), hsc->get_config());
+//         blk2 = hsc->storage->add_blk(std::move(_blk2), hsc->get_config());
+//     }
 
-    Vote(Vote &&other) = default;
+//     operator std::string () const {
+//         DataStream s;
+//         s << "<Equiv Blame "
+//           << "blk1=" << get_hex10(blk->get_hash()) << ">"
+//           << "blk2=" << get_hex10(blk->get_hash()) << ">";
+//         return s;
+//     }
+// };
 
-    void serialize(DataStream &s) const override {
-        s << voter << blk_hash << *cert;
-    }
+// struct NoProgress: public Serializable {
+//     /** Blamer */
+//     uint32_t view_num ; // View Number
+//     ReplicaID blamer ;  // The node that is blaming
+//     part_cert_bt cert ; // My vote for this blame
 
-    void unserialize(DataStream &s) override {
-        assert(hsc != nullptr);
-        s >> voter >> blk_hash;
-        cert = hsc->parse_part_cert(s);
-    }
+//     /** handle of the core object to allow polymorphism. The user should use
+//      * a pointer to the object of the class derived from E2CCore */
+//     E2CCore *hsc;
 
-    bool verify() const {
-        assert(hsc != nullptr);
-        return cert->verify(hsc->get_config().get_pubkey(voter)) &&
-                cert->get_obj_hash() == blk_hash;
-    }
+//     NoProgress(): view_num(0), blamer(nullptr), hsc(nullptr) , cert(nullptr) {}
+//     NoProgress(uint32_t _vnum ,
+//             ReplicaID bl,
+//             part_cert_bt &&cert,
+//             E2CCore *hsc):
+//         view_num(_vnum),
+//         blamer(bl),
+//         cert(std::move(cert)),
+//         hsc(hsc) {}
 
-    promise_t verify(VeriPool &vpool) const {
-        assert(hsc != nullptr);
-        return cert->verify(hsc->get_config().get_pubkey(voter), vpool).then([this](bool result) {
-            return result && cert->get_obj_hash() == blk_hash;
-        });
-    }
+//     void serialize(DataStream &s) const override {
+//         s << view_num
+//             << blamer
+//              << *cert ;
+//     }
 
-    operator std::string () const {
-        DataStream s;
-        s << "<vote "
-          << "rid=" << std::to_string(voter) << " "
-          << "blk=" << get_hex10(blk_hash) << ">";
-        return s;
-    }
-};
+//     void unserialize(DataStream &s) override {
+//         assert(hsc != nullptr);
+//         s >> view_num >> blamer ;
+//         cert = hsc->parse_part_cert(s) ;
+//     }
+
+//     operator std::string () const {
+//         DataStream s;
+//         s << "<No Progress Blame "
+//           << "View Number" << view_num
+//           << "by" << blamer ;
+//         return s;
+//     }
+// };
+
 
 struct Finality: public Serializable {
     ReplicaID rid;

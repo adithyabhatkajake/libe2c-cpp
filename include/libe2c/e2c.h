@@ -35,14 +35,14 @@ struct MsgPropose {
     void postponed_parse(E2CCore *hsc);
 };
 
-struct MsgVote {
-    static const opcode_t opcode = 0x1;
-    DataStream serialized;
-    Vote vote;
-    MsgVote(const Vote &);
-    MsgVote(DataStream &&s): serialized(std::move(s)) {}
-    void postponed_parse(E2CCore *hsc);
-};
+// struct MsgVote {
+//     static const opcode_t opcode = 0x1;
+//     DataStream serialized;
+//     Vote vote;
+//     MsgVote(const Vote &);
+//     MsgVote(DataStream &&s): serialized(std::move(s)) {}
+//     void postponed_parse(E2CCore *hsc);
+// };
 
 struct MsgReqBlock {
     static const opcode_t opcode = 0x2;
@@ -62,6 +62,63 @@ struct MsgRespBlock {
     MsgRespBlock(DataStream &&s): serialized(std::move(s)) {}
     void postponed_parse(E2CCore *hsc);
 };
+
+// struct MsgEquivBlame {
+//     static const opcode_t opcode = 0x4;
+//     DataStream serialized;
+//     EquivBlame bl;
+//     MsgEquivBlame(const EquivBlame &);
+//     /** Only move the data to serialized, do not parse immediately. */
+//     MsgEquivBlame(DataStream &&s): serialized(std::move(s)) {}
+//     /** Parse the serialized data to blks now, with `hsc->storage`. */
+//     void postponed_parse(E2CCore *hsc);
+// };
+
+// struct MsgNoProgressBlame {
+//     static const opcode_t opcode = 0x5;
+//     DataStream serialized;
+//     NoProgressBlame bl;
+
+
+//     MsgNoProgressBlame(const NoProgressBlame &);
+//     /** Only move the data to serialized, do not parse immediately. */
+//     MsgNoProgressBlame(DataStream &&s): serialized(std::move(s)) {}
+//     /** Parse the serialized data to blks now, with `hsc->storage`. */
+//     void postponed_parse(E2CCore *hsc);
+// };
+
+// struct MsgExtBlame {
+//     static const opcode_t opcode = 0x6;
+//     DataStream serialized;
+//     ExtBlame bl;
+//     MsgExtBlame(const ExtBlame &);
+//     /** Only move the data to serialized, do not parse immediately. */
+//     MsgExtBlame(DataStream &&s): serialized(std::move(s)) {}
+//     /** Parse the serialized data to blks now, with `hsc->storage`. */
+//     void postponed_parse(E2CCore *hsc);
+// };
+
+// struct MsgQuitView {
+//     static const opcode_t opcode = 0x7;
+//     DataStream serialized;
+//     QuitView qv ;
+//     MsgQuitView(const QuitView &);
+//     /** Only move the data to serialized, do not parse immediately. */
+//     MsgQuitView(DataStream &&s): serialized(std::move(s)) {}
+//     /** Parse the serialized data to blks now, with `hsc->storage`. */
+//     void postponed_parse(E2CCore *hsc);
+// };
+
+// struct MsgReqVote {
+//     static const opcode_t opcode = 0x8;
+//     DataStream serialized;
+//     ReqVote rv ;
+//     MsgReqVote(const ReqVote &);
+//     /** Only move the data to serialized, do not parse immediately. */
+//     MsgReqVote(DataStream &&s): serialized(std::move(s)) {}
+//     /** Parse the serialized data to blks now, with `hsc->storage`. */
+//     void postponed_parse(E2CCore *hsc);
+// };
 
 using promise::promise_t;
 
@@ -116,6 +173,7 @@ class E2CBase: public E2CCore {
     public:
     using Net = PeerNetwork<opcode_t>;
     using commit_cb_t = std::function<void(const Finality &)>;
+    EventContext ec;
 
     protected:
     /** the binding address in replica network */
@@ -123,7 +181,6 @@ class E2CBase: public E2CCore {
     /** the block size */
     size_t blk_size;
     /** libevent handle */
-    EventContext ec;
     salticidae::ThreadCall tcall;
     VeriPool vpool;
     std::vector<PeerId> peers;
@@ -163,10 +220,13 @@ class E2CBase: public E2CCore {
     void on_fetch_blk(const block_t &blk);
     bool on_deliver_blk(const block_t &blk);
 
+    // Set Commit timer and handler for every block
+    std::queue<std::pair<uint256_t,TimerEvent>> commit_queue;
+    // On finishing 2\delta, use this to commit this block and all its ancestors
+    inline void commit_timer_cb (uint256_t blk_hash);
+
     /** deliver consensus message: <propose> */
     inline void propose_handler(MsgPropose &&, const Net::conn_t &);
-    /** deliver consensus message: <vote> */
-    inline void vote_handler(MsgVote &&, const Net::conn_t &);
     /** fetches full block data */
     inline void req_blk_handler(MsgReqBlock &&, const Net::conn_t &);
     /** receives a block */
@@ -174,8 +234,9 @@ class E2CBase: public E2CCore {
 
     inline bool conn_handler(const salticidae::ConnPool::conn_t &, bool);
 
+    // Sendall <PROPOSE>
     void do_broadcast_proposal(const Proposal &) override;
-    void do_vote(ReplicaID, const Vote &) override;
+    // We call the action of committing, DECIDING
     void do_decide(Finality &&) override;
     void do_consensus(const block_t &blk) override;
 

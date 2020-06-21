@@ -68,7 +68,7 @@ endif()
 # TODO Fix Logging
 option(E2C_ENABLE_PROT_LOG  "Enable Protocol logging"   OFF )
 option(E2C_DEBUG            "Enable Debugging"          OFF )
-option(BUILD_PROGRAMS       "Build Programs"            ON)
+option(BUILD_PROGRAMS       "Build Programs"            ON  )
 
 configure_file(src/config.h.in include/libe2c/config.h @ONLY)
 
