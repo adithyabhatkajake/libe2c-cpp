@@ -56,6 +56,8 @@ class E2CCore {
 
     public:
     EventContext ec;
+    EventContext commit_ec;
+
     //  Set Commit timer and handler for every block
     std::unordered_map<uint32_t, TimerEvent> commit_queue;
     // Map between height and block
@@ -73,6 +75,7 @@ class E2CCore {
     void on_init(uint32_t nfaulty);
     void set_delta(double _d) { delta = _d; }
     double get_delta() { return delta; }
+    std::vector<block_t> get_parents();
 
     /** Call to inform the state machine that a block is ready to be handled.
      * A block is only delivered if itself is fetched, the block for the
@@ -168,7 +171,6 @@ class E2CCore {
 
 /** Abstraction for proposal messages. */
 struct Proposal: public Serializable {
-    ReplicaID proposer;
     /** block being proposed */
     block_t blk;
     /** handle of the core object to allow polymorphism. The user should use
@@ -176,21 +178,17 @@ struct Proposal: public Serializable {
     E2CCore *hsc;
 
     Proposal(): blk(nullptr), hsc(nullptr) {}
-    Proposal(ReplicaID proposer,
-            const block_t &blk,
+    Proposal(const block_t &blk,
             E2CCore *hsc):
-        proposer(proposer),
         blk(blk), hsc(hsc) {}
 
     void serialize(DataStream &s) const override {
-        s << proposer
-          << *blk
+          s << *blk
             << *(blk->get_signature()) ;
     }
 
     void unserialize(DataStream &s) override {
         assert(hsc != nullptr);
-        s >> proposer;
         Block _blk;
         _blk.unserialize(s, hsc);
         _blk.set_signature(hsc->parse_part_cert(s));
@@ -200,8 +198,9 @@ struct Proposal: public Serializable {
     operator std::string () const {
         DataStream s;
         s << "<proposal "
-          << "rid=" << std::to_string(proposer) << " "
-          << "blk=" << get_hex10(blk->get_hash()) << ">";
+          << "rid=" << std::to_string(blk->get_proposer()) << " "
+          << "blk=" << get_hex10(blk->get_hash()) << ">"
+          << std::string(*blk) ;
         return s;
     }
 };

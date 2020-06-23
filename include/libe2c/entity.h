@@ -109,15 +109,18 @@ class Block {
     std::vector<uint256_t> cmds;
     bytearray_t extra;
     ReplicaID proposer ;
+    uint32_t height;
     part_cert_bt signature ;
     // The signature is filled in MsgPropose
 
     /* the following fields can be derived from above */
     std::vector<block_t> parents;
-    uint32_t height;
     uint256_t hash;
     bool delivered;
     int8_t decision;
+    EventContext commit_ec;
+    TimerEvent commit_timer;
+    std::thread commit_thread;
 
     public:
     Block():
@@ -139,11 +142,10 @@ class Block {
             cmds(cmds),
             extra(std::move(extra)),
             proposer(proposer),
-            parents(parents),
             height(height),
-            hash(salticidae::get_hash(*this)),
+            parents(parents),
             delivered(0),
-            decision(decision) {}
+            decision(decision) { hash = salticidae::get_hash(*this); }
 
     void set_signature (part_cert_bt cert) { signature = std::move(cert); }
     part_cert_bt& get_signature () {return signature; }
@@ -187,6 +189,7 @@ class Block {
           << "id="  << get_hex10(hash) << " "
           << "height=" << std::to_string(height) << " "
           << "parent=" << get_hex10(parent_hashes[0]) << " "
+          << "proposer=" << std::to_string(proposer) << " "
           << ">";
         return s;
     }

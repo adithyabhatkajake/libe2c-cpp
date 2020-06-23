@@ -358,6 +358,7 @@ void E2CApp::start(const std::vector<std::tuple<NetAddr, bytearray_t, bytearray_
     resp_thread = std::thread([this]() { resp_ec.dispatch(); });
     /* enter the event main loop */
     papp->ec.dispatch();
+
 }
 
 void E2CApp::stop() {

@@ -9,3 +9,5 @@ rm -rf test/{Makefile,cmake_install.cmake,test_secp256k1}
 rm -rf programs/{CMakeFiles,Makefile,cmake_install.cmake,e2c-app,e2c-client}
 # Clean Binaries in the root directory
 rm -rf tls-keygen keygen
+# Clean Logs
+rm -rf log{0,1,2,3,4,5,6,7,8,9}

@@ -180,11 +180,14 @@ void E2CBase::propose_handler(MsgPropose &&msg, const Net::conn_t &conn) {
     msg.postponed_parse(this);
     auto &prop = msg.proposal;
     block_t blk = prop.blk;
+    if(blk->get_height() == 0) {
+        return;
+    }
     // Ensure the correct proposer is proposing
-    // TODO PROBLEM
     if(blk->get_proposer() != get_pace_maker()->get_proposer()) {
         logger.warning("Received a block from rid: %u, expected from rid: %u" ,
                        blk->get_proposer(), get_pace_maker()->get_proposer());
+        logger.warning("Incoming Block: %s", std::string(*blk).c_str());
         return ;
     }
     if (!blk) return;
@@ -396,15 +399,8 @@ void E2CBase::start(
                 logger.info("Leader is trying to propose here.");
                 pmaker->beat().then([this, cmds = std::move(cmds)](ReplicaID proposer) {
                     if (proposer == get_id()) {
-                        std::vector<block_t> parents;
-                        parents.reserve(ht_blk_map.size()+1);
-                        for (const auto&kvp: ht_blk_map) {
-                            logger.info("Processing Parent of height: %u", kvp.first);
-                            parents.push_back(kvp.second);
-                        }
-                        logger.info("Finished processing parents");
                         logger.info("Calling propose");
-                        on_propose(cmds, parents);
+                        on_propose(cmds, get_parents());
                         logger.info("Finished proposing");
                     }
                 });

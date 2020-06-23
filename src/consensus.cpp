@@ -30,8 +30,30 @@ E2CCore::E2CCore(ReplicaID id, privkey_bt &&priv_key):
         tails{b0},
         id(id),
         storage(new EntityStorage()) {
+    b0->proposer = 1;
+    b0->hash = salticidae::get_hash(0) ;
+    //  b0->cmds.clear();
+    // b0->extra = nullptr;
+    // b0->signature = nullptr;
+    // b0->hash = salticidae::get_hash(b0);
+    // // Parent hash is the same as current hash for b0
+    // b0->parent_hashes[0] = b0->hash;
     storage->add_blk(b0);
 }
+
+std::vector<block_t> E2CCore::get_parents() {
+    // Fetch parents for a new block
+    // b_mark is the highest known block
+    std::vector<block_t> parents;
+    parents.reserve(b_mark->get_height()+1);
+    for ( auto ht = b_mark->get_height() ; ht > 0; ht-- ) {
+        parents.push_back(ht_blk_map[ht]);
+    }
+    // Push Genesis block
+    parents.push_back(b0);
+    return parents;
+}
+
 
 void E2CCore::sanity_check_delivered(const block_t &blk) {
     if (!blk->delivered)
@@ -71,8 +93,39 @@ void E2CCore::update(const block_t &nblk) {
     logger.info("Processing block at height: %u", ht);
     logger.info("Processing block as per map: %u", ht_blk_map.count(ht));
     if ( (status = (ht_blk_map.count(ht) == 1)) && ht_blk_map[ht]->get_hash() != nblk->get_hash()) {
-        logger.warning("The leader has equivocated [%s] x [%s]" ,
-                       std::string(*nblk).c_str(), std::string(*(ht_blk_map[ht])).c_str());
+        logger.warning("The leader has equivocated." );
+        logger.warning("First Block");
+        logger.warning("[%s]", std::string(*ht_blk_map[ht]).c_str());
+        logger.warning("Parents:");
+        for(auto &phash: ht_blk_map[ht]->parent_hashes) {
+            logger.warning("%s", get_hex10(phash).c_str());
+        }
+        logger.warning("Commands");
+        for(auto &phash: ht_blk_map[ht]->cmds) {
+            logger.warning("%s", get_hex10(phash).c_str());
+        }
+        logger.warning("Extra");
+        for(auto e: ht_blk_map[ht]->extra) {
+            logger.warning("%u", e);
+        }
+        logger.warning("Second Block");
+        logger.warning("[%s]", std::string(*nblk).c_str());
+        logger.warning("Parents:");
+        for(auto &phash: nblk->parent_hashes) {
+            logger.warning("%s", get_hex10(phash).c_str());
+        }
+        logger.warning("Commands");
+        for(auto &phash: nblk->cmds) {
+            logger.warning("%s", get_hex10(phash).c_str());
+        }
+        logger.warning("Extra");
+        for(auto e: nblk->extra) {
+            logger.warning("%u", e);
+        }
+        uint256_t hash = salticidae::get_hash(*ht_blk_map[ht]);
+        logger.warning("recomputed hash of old block: %s", get_hex10(hash).c_str());
+        hash = salticidae::get_hash(*nblk);
+        logger.warning("recomputed hash of new block: %s", get_hex10(hash).c_str());
         return;
     }
     if ( status ) {
@@ -85,15 +138,19 @@ void E2CCore::update(const block_t &nblk) {
     }
     ht_blk_map [ht] = nblk;
     logger.info("Creating commit timer for block at height [%u] for time %.3f" , ht , get_delta());
-    commit_queue[ht] = TimerEvent(this->ec, [this,ht](TimerEvent &timer){
+    nblk->commit_timer = TimerEvent(nblk->commit_ec, [this,ht](TimerEvent &){
             commit_timer_cb(ht);
         });
-    commit_queue[ht].add(2*this->get_delta());
+    nblk->commit_timer.add(2*this->get_delta());
+    // Start timer thread for this block
+    // TODO Hopefully this will not overflow
+    nblk->commit_thread = std::thread([nblk,this]() { nblk->commit_ec.dispatch(); });
 }
 
 block_t E2CCore::on_propose(const std::vector<uint256_t> &cmds,
                             const std::vector<block_t> &parents,
                             bytearray_t &&extra) {
+    logger.info("Calling propose from Node %u" , get_id());
     if (parents.empty())
         throw std::runtime_error("empty parents");
     for (const auto &_: parents) tails.erase(_);
@@ -101,18 +158,22 @@ block_t E2CCore::on_propose(const std::vector<uint256_t> &cmds,
     block_t bnew = storage->add_blk(
         new Block(parents, cmds,
             std::move(extra),
-                  get_id(),
-                  parents[0]->height + 1)
+                  parents[0]->height + 1, get_id())
     );
-    const uint256_t bnew_hash = bnew->get_hash();
+    const uint256_t bnew_hash = salticidae::get_hash(*bnew);
+    // logger.info("Computed Hash: %s, Block hash: %s",
+    //             get_hex10(bnew_hash).c_str(), get_hex10(bnew->hash).c_str());
+    bnew->hash = bnew_hash;
     bnew->signature = std::move(create_part_cert(*priv_key, bnew_hash));
     on_deliver_blk(bnew);
     update(bnew);
-    Proposal prop(id, bnew, nullptr);
+    Proposal prop(bnew, this);
+    logger.info("Node %u proposing block %s", get_id(), std::string(*bnew).c_str());
+    /* broadcast to other replicas */
+    logger.info("Broadcasting proposal %s",std::string(prop).c_str());
+    do_broadcast_proposal(prop);
     /* self-vote */
     on_propose_(prop);
-    /* boradcast to other replicas */
-    do_broadcast_proposal(prop);
     return bnew;
 }
 
@@ -123,7 +184,10 @@ void E2CCore::on_receive_proposal(const Proposal &prop) {
     /* Forward proposal only if receiving for the first time */
     if ( ht_blk_map.count(bnew->get_height()) == 1 &&
          ht_blk_map[bnew->get_height()]->get_hash() == bnew->get_hash() ) {
-        logger.info("Already got this proposal. Discarding");
+        logger.info("Already handled this proposal. Discarding");
+        logger.info("Existing block at height %u:", bnew->get_height());
+        logger.info("Old Block: %s", std::string(*ht_blk_map[bnew->get_height()]).c_str());
+        logger.info("Incoming Block: %s", std::string(*bnew).c_str());
         return;
     }
     update(bnew);
@@ -144,11 +208,17 @@ void E2CCore::commit_timer_cb(uint32_t ht) {
     uint32_t idx = ht;
     logger.info("Commit timer for height %u ended", ht);
     /* Commit this block and all parents */
-    for (auto it = commit_queue.find(idx); it != commit_queue.begin() ; idx-- ) {
-        it->second.del();
-        // TODO Fix get block of height
+    for (uint32_t i = ht ; ; i--) {
         auto blk = ht_blk_map[idx];
         logger.info("Committing Block %s", std::string(*blk).c_str());
+        if ( blk->decision == 1 ) {
+            return ;
+        }
+        // Clean up Heap
+        // if ( blk->commit_ec != nullptr )
+        //     delete blk->commit_ec ;
+        // if ( blk->commit_timer != nullptr )
+        blk->commit_timer.del() ;
         blk->decision = 1;
         do_consensus(blk);
         /* Execute all statements */

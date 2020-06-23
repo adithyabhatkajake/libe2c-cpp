@@ -18,6 +18,8 @@
 namespace e2c {
 
 void Block::serialize(DataStream &s) const {
+    s << htole((uint32_t)proposer) ;
+    s << htole((uint32_t)height) ;
     s << htole((uint32_t)parent_hashes.size());
     for (const auto &hash: parent_hashes)
         s << hash;
@@ -25,11 +27,16 @@ void Block::serialize(DataStream &s) const {
     for (auto cmd: cmds)
         s << cmd;
     s << htole((uint32_t)extra.size()) << extra;
-    s << proposer ;
 }
 
 void Block::unserialize(DataStream &s, E2CCore *hsc) {
     uint32_t n;
+    s >> n;
+    n = letoh(n);
+    proposer = n;
+    s >> n;
+    n = letoh(n);
+    height = n;
     s >> n;
     n = letoh(n);
     parent_hashes.resize(n);
@@ -49,7 +56,6 @@ void Block::unserialize(DataStream &s, E2CCore *hsc) {
         auto base = s.get_data_inplace(n);
         extra = bytearray_t(base, base + n);
     }
-    s >> proposer ;
     hash = salticidae::get_hash(*this);
 }
 

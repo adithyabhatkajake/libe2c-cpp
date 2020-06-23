@@ -82,7 +82,7 @@ class E2CSyncPaceMaker : public virtual PaceMaker {
     }
 
     void on_consensus ( const block_t& blk) override {
-        logger.info("Achieved consensus for block: %s" , std::string(*blk));
+        logger.info("Achieved consensus for block: %s" , std::string(*blk).c_str());
         return ;
     }
 
