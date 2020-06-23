@@ -21,18 +21,20 @@ using salticidae::static_pointer_cast;
 namespace e2c {
 
 const opcode_t MsgPropose::opcode;
-MsgPropose::MsgPropose(const Proposal &proposal) { serialized << proposal; }
+MsgPropose::MsgPropose(const Proposal &proposal) {
+    serialized << proposal;
+}
 void MsgPropose::postponed_parse(E2CCore *hsc) {
     proposal.hsc = hsc;
     serialized >> proposal;
 }
 
-const opcode_t MsgVote::opcode;
-MsgVote::MsgVote(const Vote &vote) { serialized << vote; }
-void MsgVote::postponed_parse(E2CCore *hsc) {
-    vote.hsc = hsc;
-    serialized >> vote;
-}
+// const opcode_t MsgVote::opcode;
+// MsgVote::MsgVote(const Vote &vote) { serialized << vote; }
+// void MsgVote::postponed_parse(E2CCore *hsc) {
+//     vote.hsc = hsc;
+//     serialized >> vote;
+// }
 
 const opcode_t MsgReqBlock::opcode;
 MsgReqBlock::MsgReqBlock(const std::vector<uint256_t> &blk_hashes) {
@@ -157,13 +159,10 @@ promise_t E2CBase::async_deliver_blk(const uint256_t &blk_hash,
     async_fetch_blk(blk_hash, &replica).then([this, replica](block_t blk) {
         /* qc_ref should be fetched */
         std::vector<promise_t> pms;
-        const auto &qc = blk->get_qc();
-        assert(qc);
         if (blk == get_genesis())
             pms.push_back(promise_t([](promise_t &pm){ pm.resolve(true); }));
         else
             pms.push_back(blk->verify(this, vpool));
-        pms.push_back(async_fetch_blk(qc->get_obj_hash(), &replica));
         /* the parents should be delivered */
         for (const auto &phash: blk->get_parent_hashes())
             pms.push_back(async_deliver_blk(phash, replica));
@@ -181,6 +180,16 @@ void E2CBase::propose_handler(MsgPropose &&msg, const Net::conn_t &conn) {
     msg.postponed_parse(this);
     auto &prop = msg.proposal;
     block_t blk = prop.blk;
+    if(blk->get_height() == 0) {
+        return;
+    }
+    // Ensure the correct proposer is proposing
+    if(blk->get_proposer() != get_pace_maker()->get_proposer()) {
+        logger.warning("Received a block from rid: %u, expected from rid: %u" ,
+                       blk->get_proposer(), get_pace_maker()->get_proposer());
+        logger.warning("Incoming Block: %s", std::string(*blk).c_str());
+        return ;
+    }
     if (!blk) return;
     promise::all(std::vector<promise_t>{
         async_deliver_blk(blk->get_hash(), peer)
@@ -189,20 +198,9 @@ void E2CBase::propose_handler(MsgPropose &&msg, const Net::conn_t &conn) {
     });
 }
 
-void E2CBase::vote_handler(MsgVote &&msg, const Net::conn_t &conn) {
-    const auto &peer = conn->get_peer_id();
-    if (peer.is_null()) return;
-    msg.postponed_parse(this);
-    RcObj<Vote> v(new Vote(std::move(msg.vote)));
-    promise::all(std::vector<promise_t>{
-        async_deliver_blk(v->blk_hash, peer),
-        v->verify(vpool),
-    }).then([this, v=std::move(v)](const promise::values_t values) {
-        if (!promise::any_cast<bool>(values[1])) { /* TODO Logging */ }
-        else
-            on_receive_vote(*v);
-    });
-}
+    void E2CBase::do_consensus(const block_t &blk) {
+        pmaker->on_consensus(blk);
+    }
 
 void E2CBase::req_blk_handler(MsgReqBlock &&msg, const Net::conn_t &conn) {
     const PeerId replica = conn->get_peer_id();
@@ -305,9 +303,9 @@ E2CBase::E2CBase(uint32_t blk_size,
                     size_t nworker,
                     const Net::Config &netconfig):
         E2CCore(rid, std::move(priv_key)),
+        ec(ec),
         listen_addr(listen_addr),
         blk_size(blk_size),
-        ec(ec),
         tcall(ec),
         vpool(ec, nworker),
         pn(ec, netconfig),
@@ -326,7 +324,6 @@ E2CBase::E2CBase(uint32_t blk_size,
 {
     /* register the handlers for msg from replicas */
     pn.reg_handler(salticidae::generic_bind(&E2CBase::propose_handler, this, _1, _2));
-    pn.reg_handler(salticidae::generic_bind(&E2CBase::vote_handler, this, _1, _2));
     pn.reg_handler(salticidae::generic_bind(&E2CBase::req_blk_handler, this, _1, _2));
     pn.reg_handler(salticidae::generic_bind(&E2CBase::resp_blk_handler, this, _1, _2));
     pn.reg_conn_handler(salticidae::generic_bind(&E2CBase::conn_handler, this, _1, _2));
@@ -336,22 +333,6 @@ E2CBase::E2CBase(uint32_t blk_size,
 
 void E2CBase::do_broadcast_proposal(const Proposal &prop) {
     pn.multicast_msg(MsgPropose(prop), peers);
-}
-
-void E2CBase::do_vote(ReplicaID last_proposer, const Vote &vote) {
-    pmaker->beat_resp(last_proposer)
-            .then([this, vote](ReplicaID proposer) {
-        if (proposer == get_id())
-        {
-            throw E2CError("unreachable line");
-        }
-        else
-            pn.send_msg(MsgVote(vote), get_config().get_peer_id(proposer));
-    });
-}
-
-void E2CBase::do_consensus(const block_t &blk) {
-    pmaker->on_consensus(blk);
 }
 
 void E2CBase::do_decide(Finality &&fin) {
@@ -386,7 +367,7 @@ void E2CBase::start(
         }
     }
 
-    uint32_t nfaulty = peers.size() / 3;
+    uint32_t nfaulty = (peers.size()-1) / 2;
     if (nfaulty == 0)
     { /* TODO: Logging */}
     on_init(nfaulty);
@@ -399,7 +380,6 @@ void E2CBase::start(
         while (q.try_dequeue(e))
         {
             ReplicaID proposer = pmaker->get_proposer();
-
             const auto &cmd_hash = e.first;
             auto it = decision_waiting.find(cmd_hash);
             if (it == decision_waiting.end())
@@ -416,9 +396,13 @@ void E2CBase::start(
                     cmds.push_back(cmd_pending_buffer.front());
                     cmd_pending_buffer.pop();
                 }
+                logger.info("Leader is trying to propose here.");
                 pmaker->beat().then([this, cmds = std::move(cmds)](ReplicaID proposer) {
-                    if (proposer == get_id())
-                        on_propose(cmds, pmaker->get_parents());
+                    if (proposer == get_id()) {
+                        logger.info("Calling propose");
+                        on_propose(cmds, get_parents());
+                        logger.info("Finished proposing");
+                    }
                 });
                 return true;
             }

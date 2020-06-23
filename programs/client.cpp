@@ -93,7 +93,7 @@ void client_resp_cmd_handler(MsgRespCmd &&msg, const Net::conn_t &) {
     if (it == waiting.end()) return;
     et.stop();
     if (++it->second.confirmed <= nfaulty) return; // wait for f + 1 ack
-    e2c::logger.info("got %s, wall: %.3f, cpu: %.3f",
+    e2c::logger.info("Acknowledged %s, wall: %.3f, cpu: %.3f",
                         std::string(fin).c_str(),
                         et.elapsed_sec, et.cpu_elapsed_sec);
     waiting.erase(it);
@@ -150,8 +150,8 @@ int main(int argc, char **argv) {
         size_t _;
         replicas.push_back(NetAddr(NetAddr(_p.first).ip, htons(stoi(_p.second, &_))));
     }
-
-    nfaulty = (replicas.size() - 1) / 3;
+    /* For E2C, in the synchronous world, we have n > 2f */
+    nfaulty = (replicas.size() - 1) / 2;
     e2c::logger.info("nfaulty = %zu", nfaulty);
     connect_all();
     while (try_send());

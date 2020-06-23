@@ -18,17 +18,25 @@
 namespace e2c {
 
 void Block::serialize(DataStream &s) const {
+    s << htole((uint32_t)proposer) ;
+    s << htole((uint32_t)height) ;
     s << htole((uint32_t)parent_hashes.size());
     for (const auto &hash: parent_hashes)
         s << hash;
     s << htole((uint32_t)cmds.size());
     for (auto cmd: cmds)
         s << cmd;
-    s << *qc << htole((uint32_t)extra.size()) << extra;
+    s << htole((uint32_t)extra.size()) << extra;
 }
 
 void Block::unserialize(DataStream &s, E2CCore *hsc) {
     uint32_t n;
+    s >> n;
+    n = letoh(n);
+    proposer = n;
+    s >> n;
+    n = letoh(n);
+    height = n;
     s >> n;
     n = letoh(n);
     parent_hashes.resize(n);
@@ -39,7 +47,6 @@ void Block::unserialize(DataStream &s, E2CCore *hsc) {
     cmds.resize(n);
     for (auto &cmd: cmds)
         s >> cmd;
-    qc = hsc->parse_quorum_cert(s);
     s >> n;
     n = letoh(n);
     if (n == 0)
@@ -49,19 +56,18 @@ void Block::unserialize(DataStream &s, E2CCore *hsc) {
         auto base = s.get_data_inplace(n);
         extra = bytearray_t(base, base + n);
     }
-    this->hash = salticidae::get_hash(*this);
+    hash = salticidae::get_hash(*this);
 }
 
 bool Block::verify(const E2CCore *hsc) const {
-    if (qc->get_obj_hash() == hsc->get_genesis()->get_hash())
-        return true;
-    return qc->verify(hsc->get_config());
+    return signature->verify ( hsc->get_config().get_pubkey(proposer) ) ;
 }
 
 promise_t Block::verify(const E2CCore *hsc, VeriPool &vpool) const {
-    if (qc->get_obj_hash() == hsc->get_genesis()->get_hash())
-        return promise_t([](promise_t &pm) { pm.resolve(true); });
-    return qc->verify(hsc->get_config(), vpool);
+    bool status = signature->verify ( hsc->get_config().get_pubkey(proposer) ) ;
+    return promise_t([status](promise_t &pm) {
+        pm.resolve(status);
+    });
 }
 
 }

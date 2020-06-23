@@ -107,53 +107,51 @@ class Block {
     friend E2CCore;
     std::vector<uint256_t> parent_hashes;
     std::vector<uint256_t> cmds;
-    quorum_cert_bt qc;
     bytearray_t extra;
+    ReplicaID proposer ;
+    uint32_t height;
+    part_cert_bt signature ;
+    // The signature is filled in MsgPropose
 
     /* the following fields can be derived from above */
-    uint256_t hash;
     std::vector<block_t> parents;
-    block_t qc_ref;
-    quorum_cert_bt self_qc;
-    uint32_t height;
+    uint256_t hash;
     bool delivered;
     int8_t decision;
-
-    std::unordered_set<ReplicaID> voted;
+    EventContext commit_ec;
+    TimerEvent commit_timer;
+    std::thread commit_thread;
 
     public:
     Block():
-        qc(nullptr),
-        qc_ref(nullptr),
-        self_qc(nullptr), height(0),
+        height(0),
         delivered(false), decision(0) {}
 
     Block(bool delivered, int8_t decision):
-        qc(new QuorumCertDummy()),
+        height(0),
         hash(salticidae::get_hash(*this)),
-        qc_ref(nullptr),
-        self_qc(nullptr), height(0),
         delivered(delivered), decision(decision) {}
 
     Block(const std::vector<block_t> &parents,
         const std::vector<uint256_t> &cmds,
-        quorum_cert_bt &&qc,
         bytearray_t &&extra,
         uint32_t height,
-        const block_t &qc_ref,
-        quorum_cert_bt &&self_qc,
+        ReplicaID proposer,
         int8_t decision = 0):
             parent_hashes(get_hashes(parents)),
             cmds(cmds),
-            qc(std::move(qc)),
             extra(std::move(extra)),
-            hash(salticidae::get_hash(*this)),
-            parents(parents),
-            qc_ref(qc_ref),
-            self_qc(std::move(self_qc)),
+            proposer(proposer),
             height(height),
+            parents(parents),
             delivered(0),
-            decision(decision) {}
+            decision(decision) { hash = salticidae::get_hash(*this); }
+
+    void set_signature (part_cert_bt cert) { signature = std::move(cert); }
+    part_cert_bt& get_signature () {return signature; }
+
+    /* Fetch the block's proposer */
+    ReplicaID get_proposer() { return proposer; }
 
     void serialize(DataStream &s) const;
 
@@ -183,10 +181,6 @@ class Block {
 
     uint32_t get_height() const { return height; }
 
-    const quorum_cert_bt &get_qc() const { return qc; }
-
-    const block_t &get_qc_ref() const { return qc_ref; }
-
     const bytearray_t &get_extra() const { return extra; }
 
     operator std::string () const {
@@ -195,7 +189,8 @@ class Block {
           << "id="  << get_hex10(hash) << " "
           << "height=" << std::to_string(height) << " "
           << "parent=" << get_hex10(parent_hashes[0]) << " "
-          << "qc_ref=" << (qc_ref ? get_hex10(qc_ref->get_hash()) : "null") << ">";
+          << "proposer=" << std::to_string(proposer) << " "
+          << ">";
         return s;
     }
 };
