@@ -22,7 +22,7 @@
 *** [X] e2c_app
 *** [X] e2c_client
 
-** DONE [2/4] tests
+** DONE [0/0] tests
 *** [X] secp256k1_test
 *** [X] CmakeLists
 
@@ -38,24 +38,38 @@ Compiles Correctly
 *** [X] hotstuff_tls_keygen.cpp
 *** [X] util.cpp
 
-** TODO [0/4] scripts
-*** [ ] faulty_leader_demo.sh
+** DONE [4/4] scripts
+*** DONE faulty_leader_demo.sh
 A script to automate the demo of fault tolerance in E2C
-*** [ ] gen_conf.py
+*** [X] gen_conf.py
 A script that generates the configuration such as public keys, base ports and other settings.
-*** [ ] run_demo.sh
+*** [X] run_demo.sh
 A script to automate the steady state with correct leader runs.
-*** [ ] run_demo_client.sh
+*** [X] run_demo_client.sh
 A script that runs the clients to the automated replication service.
 
 
-* TODO [1/7] Work left to do
-** DONE [ ] Check if everything compiles
+* TODO [5/8] Work left to do
+** DONE [X] Check if everything compiles
 Make sure to add all the sources in Cmakelists and ensure that there are no compilation errors at least.
-** TODO [0/3] Test if the protocol works
+** DONE [0/0] Test if the protocol works
 Run it and see if the code crashes or not. In the beginning it should just print the stats or something.
-*** TODO [ ] Enable Code Logging to ensure that the protocol works.
-*** TODO [ ] steady_state_correct_leader_test
-*** TODO [ ] byzantine_leader_test
-** TODO [ ] Implement E2C Best Case
+*** DONE [X] Enable Code Logging to ensure that the protocol works.
+*** DONE [X] steady_state_correct_leader_test
+** DONE [X] Implement E2C Best Case
 ** TODO [ ] Implement E2C View Change
+Implement the faulty proposer scenario. Start with a script that starts other nodes so that we can manually start the proposer on our own.
+*** TODO [ ] faults.sh
+A script that starts all nodes except the proposer.
+*** TODO [ ] Implementation update
+Start by implementing an impeach timer. High level code works as follows:
+1. If no blocks are received in 2\delta since last commit then send <<BLAME,proposer>,signature>.
+2. Accept proposals only if we are not quitting this view.
+3. On collecting f+1 blame messages, stop accepting new blocks from this proposer.
+4. Update pace_maker's proposer and perform impeach.
+5. Create a certificate from f+1 blame messages and broadcast them to everyone.
+6. On receiving a blame certificate, if we haven't already quit the view, quit the view and stop accepting blocks from this proposer.
+7. Send a Request for votes for b_mark and b_comm.
+8. Collect votes for b_mark and b_comm.
+9. Make a certificate for b_mark and b_comm.
+10. Send the new certificate to the new leader.
