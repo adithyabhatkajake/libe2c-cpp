@@ -1,12 +1,12 @@
 libe2c
 -----------
 
-libe2c is a generic synchronous BFT state-machine replication library that is best case optimal.
+libe2c is a generic synchronous BFT state-machine replication library that is best case optimal. This code is based on the code from [libhotstuff](https://github.com/hot-stuff/libhotstuff).
 
 Paper
 =====
 
-- Full paper: <Full Paper Link>
+- Full paper: Coming Soon
 
 Playing with the code!
 =======================
